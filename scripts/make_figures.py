@@ -1,4 +1,8 @@
-"""README figures. Two independent modes, run from the project root:
+"""README figures. Three independent modes, run from the project root:
+
+    python -m scripts.make_figures targets
+        Local, no torch. assets/targets.png: image | instances | 3-class target.
+
 
     python -m scripts.make_figures results
         Local, no torch. Reads .project_state/results/dashboard_data.json and
@@ -269,8 +273,11 @@ def make_predictions(args) -> None:
             pred = instances_from_probs(probs, **TUNED_TTA)
             gt = np.asarray(lab).astype(np.int32)
             ap = average_precision(gt, pred)["map"]
+            # Model input stays the cached (polarity-flipped) image; only the
+            # DISPLAY copy is un-flipped so brightfield looks as acquired.
+            shown = 255 - img if r["modality"] == "brightfield" else img
             for ax, im, title in zip(
-                row, (img, _color_instances(gt), _color_instances(pred, 1)),
+                row, (shown, _color_instances(gt), _color_instances(pred, 1)),
                 (f"{r['modality']}  {r['h']}x{r['w']}",
                  f"ground truth ({int(gt.max())})",
                  f"prediction ({int(pred.max())})  mAP {ap:.2f}")):

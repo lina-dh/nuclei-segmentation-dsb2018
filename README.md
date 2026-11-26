@@ -136,6 +136,12 @@ encoder learning-rate multiplier, and a longer schedule at low learning rate.
 
 ## Reproduce
 
+**On Google Colab (free GPU):**
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lina-dh/nuclei-segmentation-dsb2018/blob/main/notebooks/02_train_colab.ipynb)
+runs everything from the data to the prediction figure in about 35 minutes.
+
+**Locally:**
+
 ```bash
 pip install -r requirements.txt
 
