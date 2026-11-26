@@ -1,0 +1,21 @@
+# Dataset + derived cache (754 MB; download from Kaggle, rebuild with scripts/build_cache.py)
+data/
+*.zip
+
+# Environments, caches
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Training outputs (checkpoints are ~100 MB each)
+runs/
+wandb/
+*.pt
+
+# Private working notes. The frozen manifest, stats and result JSONs ARE committed.
+CLAUDE.md
+.claude/
+.project_state/milestones.md
+.project_state/results/*.log
+.project_state_remote_REFERENCE_DO_NOT_USE/
