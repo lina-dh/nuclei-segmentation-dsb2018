@@ -23,6 +23,7 @@ import matplotlib
 # Agg = file-only backend. Must be selected BEFORE pyplot is imported, otherwise
 # pyplot binds an interactive backend (fails on a headless SSH host).
 matplotlib.use("Agg")
+import cv2  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
@@ -161,6 +162,70 @@ def _color_instances(lab: np.ndarray, seed: int = 0) -> np.ndarray:
     return lut[lab]
 
 
+def _pick_typical(val, per_modality: int = 2):
+    """Per modality, the val images whose instance count is closest to that
+    modality's median -> typical images, deterministic, not cherry-picked."""
+    picks = []
+    for mod in ("fluorescence", "brightfield"):
+        recs = [r for r in val if r["modality"] == mod]
+        med = np.median([r["n_instances"] for r in recs])
+        recs.sort(key=lambda r: abs(r["n_instances"] - med))
+        picks += recs[:per_modality]
+    return picks
+
+
+def make_targets(args) -> None:
+    """Image | instance labels | 3-class target, from the cache. No model needed.
+    Shows WHY the 3-class target exists: touching nuclei get a border wall."""
+    from src.data_loader import SampleCache
+    from src.dataset_manifest import load_manifest
+
+    manifest, _ = load_manifest(ROOT / args.state_dir)
+    val = [r for r in manifest["samples"] if r["split"] == "val"]
+    # Highest touching density per modality among typical images: pick the
+    # 6 most typical, then keep the 2 densest (more touching pairs to show).
+    typical = _pick_typical(val, per_modality=6)  # 6 fluo + 6 bright
+    picks = []
+    for mod in ("fluorescence", "brightfield"):
+        cand = [r for r in typical if r["modality"] == mod]
+        # Densest first: instances per pixel -> more touching pairs on show.
+        picks += sorted(cand, key=lambda r: -r["n_instances"] / r["area"])[:1]
+    cache = SampleCache(ROOT / args.cache_dir, [r["sample_id"] for r in picks],
+                        mode="mmap", keep_label=True)
+    # Class palette: bg = near-black, interior = blue, border = orange
+    # (categorical slots 1-2, same hues as the charts).
+    cls_lut = np.array([[24, 24, 23], [0x2a, 0x78, 0xd6], [0xeb, 0x68, 0x34]], np.uint8)
+
+    fig, axes = plt.subplots(len(picks), 3, figsize=(10, 3.4 * len(picks)))
+    for row, r in zip(axes, picks):
+        img, tgt, lab = (np.asarray(a) for a in cache.get(r["sample_id"]))
+        # The cache stores brightfield INVERTED (polarity flip baked in at
+        # cache time); undo it for display so the image looks as acquired.
+        shown = 255 - img if r["modality"] == "brightfield" else img
+        # Zoom to a 256x256 window around the densest region so the 1-2 px
+        # border wall is visible at README size; window = argmax of a box sum.
+        h, w = lab.shape
+        s = min(256, h, w)
+        fg = (lab > 0).astype(np.float32)
+        dens = cv2.boxFilter(fg, -1, (s, s), normalize=False)  # local fg count
+        cy, cx = np.unravel_index(np.argmax(dens), dens.shape)
+        y0 = int(np.clip(cy - s // 2, 0, h - s))
+        x0 = int(np.clip(cx - s // 2, 0, w - s))
+        sl = (slice(y0, y0 + s), slice(x0, x0 + s))
+        panels = (shown[sl], _color_instances(lab[sl]), cls_lut[tgt[sl]])
+        titles = (f"{r['modality']} (crop {s}x{s})",
+                  f"instances ({len(np.unique(lab[sl])) - 1} in crop)",
+                  "3-class target: interior / border")
+        for ax, im, t in zip(row, panels, titles):
+            ax.imshow(im, interpolation="nearest")  # nearest: keep 1px walls crisp
+            ax.set_title(t, fontsize=9, loc="left", fontweight="normal")
+            ax.axis("off")
+    fig.tight_layout()
+    ASSETS.mkdir(exist_ok=True)
+    fig.savefig(ASSETS / "targets.png")
+    print(f"wrote {ASSETS / 'targets.png'}")
+
+
 def make_predictions(args) -> None:
     import torch  # local import: mode 1 must work without torch installed
 
@@ -174,14 +239,7 @@ def make_predictions(args) -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     manifest, _ = load_manifest(ROOT / args.state_dir)
     val = [r for r in manifest["samples"] if r["split"] == "val"]
-    # Deterministic pick: per modality, the val image whose instance count is
-    # closest to the modality median -> typical images, not cherry-picked.
-    picks = []
-    for mod in ("fluorescence", "brightfield"):
-        recs = [r for r in val if r["modality"] == mod]
-        med = np.median([r["n_instances"] for r in recs])
-        recs.sort(key=lambda r: abs(r["n_instances"] - med))
-        picks += recs[:2]
+    picks = _pick_typical(val)
 
     cache = SampleCache(ROOT / args.cache_dir, [r["sample_id"] for r in picks],
                         mode="mmap", keep_label=True)
@@ -232,11 +290,15 @@ def main(argv=None) -> int:
     s1.add_argument("--state-dir", default=".project_state")
     s2 = sub.add_parser("predictions")
     s2.add_argument("--ckpt", required=True)
-    s2.add_argument("--state-dir", default=".project_state")
-    s2.add_argument("--cache-dir", default="data/cache")
+    s3 = sub.add_parser("targets")
+    for s in (s2, s3):  # shared data-location flags
+        s.add_argument("--state-dir", default=".project_state")
+        s.add_argument("--cache-dir", default="data/cache")
     a = p.parse_args(argv)
     if a.mode == "results":
         make_results(ROOT / a.state_dir)
+    elif a.mode == "targets":
+        make_targets(a)
     else:
         make_predictions(a)
     return 0

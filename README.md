@@ -20,6 +20,13 @@ competition's metric.
 
 ![Gap to ceiling](assets/gap_to_ceiling.png)
 
+![3-class target](assets/targets.png)
+
+*Ground truth for two validation images. In the bottom image the nuclei touch.
+A binary mask would merge them into one blob. The 3-class target puts a border
+(orange) between them, and at inference the watershed uses it to split them
+apart.*
+
 <!-- predictions.png: run `python -m scripts.make_figures predictions --ckpt runs/run40/best.pt` on the GPU machine, then uncomment:
 ![Predictions](assets/predictions.png)
 -->
